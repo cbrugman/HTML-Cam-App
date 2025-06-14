@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .camera-container {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+        }
+
+        #video {
+            width: 100%;
+            height: 300px;
+            border-radius: 15px;
+            background: #f0f0f0;
+            object-fit: cover;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        #startBtn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        #startBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
+        }
+
+        #captureBtn {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            color: white;
+        }
+
+        #captureBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.3);
+        }
+
+        #captureBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .photos-section {
+            margin-top: 30px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .photos-section h2 {
+            color: white;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 1.5rem;
+        }
+
+        .photos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+        }
+
+        .photo-item {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .photo-item:hover {
+            transform: scale(1.05);
+        }
+
+        .photo-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.1);
+            color: #f44336;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        @media (max-width: 480px) {
+            .camera-container {
+                margin: 0 10px;
+                padding: 15px;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            button {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>📸 Camera App</h1>
+    
+    <div class="camera-container">
+        <video id="video" autoplay muted playsinline></video>
+        
+        <div class="controls">
+            <button id="startBtn">Start Camera</button>
+            <button id="captureBtn" disabled>Take Photo</button>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+    </div>
+
+    <div class="photos-section">
+        <h2>📷 Captured Photos</h2>
+        <div id="photosGrid" class="photos-grid"></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const photosGrid = document.getElementById('photosGrid');
+        const status = document.getElementById('status');
+
+        let stream = null;
+        let photos = [];
+
+        // Start camera
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'environment' // Use back camera on mobile
+                    }
+                });
+                
+                video.srcObject = stream;
+                captureBtn.disabled = false;
+                startBtn.textContent = 'Camera Active';
+                startBtn.disabled = true;
+                
+                showStatus('Camera started successfully!', 'success');
+                
+            } catch (err) {
+                console.error('Camera access error:', err);
+                showStatus('Camera access denied or not available', 'error');
+            }
+        });
+
+        // Capture photo
+        captureBtn.addEventListener('click', () => {
+            if (stream) {
+                // Set canvas size to match video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                // Draw video frame to canvas
+                ctx.drawImage(video, 0, 0);
+                
+                // Convert to image data
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                
+                // Add to photos array
+                const photo = {
+                    id: Date.now(),
+                    data: imageData,
+                    timestamp: new Date().toLocaleString()
+                };
+                
+                photos.push(photo);
+                displayPhotos();
+                
+                showStatus('Photo captured!', 'success');
+            }
+        });
+
+        // Display photos
+        function displayPhotos() {
+            photosGrid.innerHTML = '';
+            
+            photos.forEach(photo => {
+                const photoDiv = document.createElement('div');
+                photoDiv.className = 'photo-item';
+                
+                photoDiv.innerHTML = `
+                    <img src="${photo.data}" alt="Captured photo" title="Taken: ${photo.timestamp}">
+                    <button class="delete-btn" onclick="deletePhoto(${photo.id})">×</button>
+                `;
+                
+                photosGrid.appendChild(photoDiv);
+            });
+        }
+
+        // Delete photo
+        function deletePhoto(photoId) {
+            photos = photos.filter(photo => photo.id !== photoId);
+            displayPhotos();
+            showStatus('Photo deleted', 'success');
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
