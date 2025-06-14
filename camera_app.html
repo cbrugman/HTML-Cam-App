@@ -199,10 +199,27 @@
             animation: loading 1.5s infinite;
         }
 
-        @keyframes loading {
-            0%, 20% { content: "."; }
-            40% { content: ".."; }
-            60%, 100% { content: "..."; }
+        .detection-tips {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #FFC107;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 5px;
+        }
+
+        .detection-tips h4 {
+            margin: 0 0 10px 0;
+            color: #F57C00;
+        }
+
+        .detection-tips ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #666;
+        }
+
+        .detection-tips li {
+            margin-bottom: 5px;
         }
 
         .delete-btn {
@@ -311,8 +328,8 @@
         const ROBOFLOW_CONFIG = {
             api_key: "gVRKMaRoSkBB7h1NjBTc",
             model_endpoint: "https://detect.roboflow.com/playing-cards-ow27d/2",
-            confidence: 0.5,
-            overlap: 0.7
+            confidence: 0.3,
+            overlap: 0.6
         };
 
         // Start camera
@@ -342,15 +359,29 @@
         // Capture photo
         captureBtn.addEventListener('click', () => {
             if (stream) {
-                // Set canvas size to match video
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+                // Set canvas size to match video with higher resolution
+                const maxWidth = 1280;
+                const maxHeight = 720;
                 
-                // Draw video frame to canvas
-                ctx.drawImage(video, 0, 0);
+                let { videoWidth, videoHeight } = video;
                 
-                // Convert to image data
-                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                // Scale up for better detection if video is small
+                if (videoWidth < maxWidth) {
+                    const scale = maxWidth / videoWidth;
+                    videoWidth *= scale;
+                    videoHeight *= scale;
+                }
+                
+                canvas.width = videoWidth;
+                canvas.height = videoHeight;
+                
+                // Draw video frame to canvas with better quality
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+                
+                // Convert to image data with higher quality
+                const imageData = canvas.toDataURL('image/jpeg', 0.9);
                 latestPhotoData = imageData;
                 
                 // Add to photos array
@@ -438,7 +469,19 @@
             `;
             
             if (detectedCards.length === 0) {
-                resultsHTML += '<p>No playing cards detected in this image.</p>';
+                resultsHTML += `
+                    <p>No playing cards detected in this image.</p>
+                    <div class="detection-tips">
+                        <h4>💡 Tips for better detection:</h4>
+                        <ul>
+                            <li>Ensure good lighting on the cards</li>
+                            <li>Hold the card flat and fully visible</li>
+                            <li>Get closer to the card (fill more of the screen)</li>
+                            <li>Avoid shadows or glare on the card</li>
+                            <li>Make sure the entire card is in the photo</li>
+                        </ul>
+                    </div>
+                `;
             } else {
                 resultsHTML += `<p>Found ${detectedCards.length} card(s):</p>
                     <div class="cards-list">`;
@@ -454,6 +497,12 @@
                 });
                 
                 resultsHTML += '</div>';
+                
+                // Show raw detection count for debugging
+                const rawCount = result.predictions ? result.predictions.length : 0;
+                if (rawCount > detectedCards.length) {
+                    resultsHTML += `<p><small>ℹ️ Removed ${rawCount - detectedCards.length} duplicate detection(s)</small></p>`;
+                }
             }
             
             resultsHTML += `
