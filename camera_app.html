@@ -92,6 +92,23 @@
             box-shadow: none;
         }
 
+        #identifyBtn {
+            background: linear-gradient(45deg, #FF9800, #F57C00);
+            color: white;
+        }
+
+        #identifyBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 152, 0, 0.3);
+        }
+
+        #identifyBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
         .photos-section {
             margin-top: 30px;
             width: 100%;
@@ -128,6 +145,64 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+        }
+
+        .detection-result {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .detection-result img {
+            width: 100%;
+            max-width: 300px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .cards-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .card-item {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .confidence {
+            background: rgba(33, 150, 243, 0.1);
+            color: #1976D2;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .loading::after {
+            content: "...";
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0%, 20% { content: "."; }
+            40% { content: ".."; }
+            60%, 100% { content: "..."; }
         }
 
         .delete-btn {
@@ -196,6 +271,7 @@
         <div class="controls">
             <button id="startBtn">Start Camera</button>
             <button id="captureBtn" disabled>Take Photo</button>
+            <button id="identifyBtn" disabled>🃏 Identify Cards</button>
         </div>
         
         <div id="status" class="status" style="display: none;"></div>
@@ -206,6 +282,13 @@
         <div id="photosGrid" class="photos-grid"></div>
     </div>
 
+    <div class="photos-section">
+        <h2>🃏 Card Detection Results</h2>
+        <div id="resultsContainer" style="display: none;">
+            <div id="detectionResults"></div>
+        </div>
+    </div>
+
     <canvas id="canvas"></canvas>
 
     <script>
@@ -214,11 +297,23 @@
         const ctx = canvas.getContext('2d');
         const startBtn = document.getElementById('startBtn');
         const captureBtn = document.getElementById('captureBtn');
+        const identifyBtn = document.getElementById('identifyBtn');
         const photosGrid = document.getElementById('photosGrid');
         const status = document.getElementById('status');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const detectionResults = document.getElementById('detectionResults');
 
         let stream = null;
         let photos = [];
+        let latestPhotoData = null;
+
+        // Roboflow configuration
+        const ROBOFLOW_CONFIG = {
+            api_key: "gVRKMaRoSkBB7h1NjBTc",
+            model_endpoint: "https://detect.roboflow.com/playing-cards-ow27d/2",
+            confidence: 0.4,
+            overlap: 0.3
+        };
 
         // Start camera
         startBtn.addEventListener('click', async () => {
@@ -256,6 +351,7 @@
                 
                 // Convert to image data
                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                latestPhotoData = imageData;
                 
                 // Add to photos array
                 const photo = {
@@ -267,10 +363,105 @@
                 photos.push(photo);
                 displayPhotos();
                 
-                showStatus('Photo captured!', 'success');
+                // Enable identify button
+                identifyBtn.disabled = false;
+                
+                showStatus('Photo captured! Now you can identify cards.', 'success');
             }
         });
 
+        // Identify cards using Roboflow
+        identifyBtn.addEventListener('click', async () => {
+            if (!latestPhotoData) {
+                showStatus('Please take a photo first!', 'error');
+                return;
+            }
+
+            identifyBtn.disabled = true;
+            identifyBtn.textContent = 'Analyzing...';
+            
+            try {
+                showStatus('Identifying cards...', 'success');
+                
+                // Convert base64 to blob
+                const base64Data = latestPhotoData.split(',')[1];
+                const byteCharacters = atob(base64Data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', blob, 'image.jpg');
+
+                // Send to Roboflow
+                const response = await fetch(
+                    `${ROBOFLOW_CONFIG.model_endpoint}?api_key=${ROBOFLOW_CONFIG.api_key}&confidence=${ROBOFLOW_CONFIG.confidence}&overlap=${ROBOFLOW_CONFIG.overlap}`,
+                    {
+                        method: 'POST',
+                        body: formData
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                displayDetectionResults(result, latestPhotoData);
+                
+            } catch (error) {
+                console.error('Detection error:', error);
+                showStatus('Card detection failed. Please try again.', 'error');
+            } finally {
+                identifyBtn.disabled = false;
+                identifyBtn.textContent = '🃏 Identify Cards';
+            }
+        });
+
+        // Display detection results
+        function displayDetectionResults(result, imageData) {
+            const detectedCards = result.predictions || [];
+            
+            resultsContainer.style.display = 'block';
+            
+            let resultsHTML = `
+                <div class="detection-result">
+                    <img src="${imageData}" alt="Analyzed photo">
+                    <h3>Detection Results:</h3>
+            `;
+            
+            if (detectedCards.length === 0) {
+                resultsHTML += '<p>No playing cards detected in this image.</p>';
+            } else {
+                resultsHTML += `<p>Found ${detectedCards.length} card(s):</p>
+                    <div class="cards-list">`;
+                
+                detectedCards.forEach(card => {
+                    const confidence = Math.round(card.confidence * 100);
+                    resultsHTML += `
+                        <div class="card-item">
+                            ${card.class}
+                            <span class="confidence">${confidence}%</span>
+                        </div>
+                    `;
+                });
+                
+                resultsHTML += '</div>';
+            }
+            
+            resultsHTML += `
+                    <p><strong>Analysis Time:</strong> ${new Date().toLocaleString()}</p>
+                </div>
+            `;
+            
+            detectionResults.innerHTML = resultsHTML;
+            
+            showStatus(`Detection complete! Found ${detectedCards.length} card(s).`, 'success');
+        }
         // Display photos
         function displayPhotos() {
             photosGrid.innerHTML = '';
