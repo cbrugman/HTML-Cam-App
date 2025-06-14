@@ -311,8 +311,8 @@
         const ROBOFLOW_CONFIG = {
             api_key: "gVRKMaRoSkBB7h1NjBTc",
             model_endpoint: "https://detect.roboflow.com/playing-cards-ow27d/2",
-            confidence: 0.4,
-            overlap: 0.3
+            confidence: 0.5,
+            overlap: 0.7
         };
 
         // Start camera
@@ -424,7 +424,10 @@
 
         // Display detection results
         function displayDetectionResults(result, imageData) {
-            const detectedCards = result.predictions || [];
+            let detectedCards = result.predictions || [];
+            
+            // Remove duplicate detections of the same card
+            detectedCards = removeDuplicateCards(detectedCards);
             
             resultsContainer.style.display = 'block';
             
@@ -461,6 +464,34 @@
             detectionResults.innerHTML = resultsHTML;
             
             showStatus(`Detection complete! Found ${detectedCards.length} card(s).`, 'success');
+        }
+
+        // Remove duplicate card detections
+        function removeDuplicateCards(predictions) {
+            const uniqueCards = [];
+            const cardCounts = {};
+            
+            // Group predictions by card class
+            predictions.forEach(prediction => {
+                const cardName = prediction.class;
+                if (!cardCounts[cardName]) {
+                    cardCounts[cardName] = [];
+                }
+                cardCounts[cardName].push(prediction);
+            });
+            
+            // For each card type, keep only the one with highest confidence
+            Object.keys(cardCounts).forEach(cardName => {
+                const cardPredictions = cardCounts[cardName];
+                
+                // Sort by confidence (highest first)
+                cardPredictions.sort((a, b) => b.confidence - a.confidence);
+                
+                // Keep only the highest confidence detection
+                uniqueCards.push(cardPredictions[0]);
+            });
+            
+            return uniqueCards;
         }
         // Display photos
         function displayPhotos() {
